@@ -8,6 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 from deepspeed.accelerator import get_accelerator
 from deepspeed.moe.utils import split_params_into_different_moe_groups_for_optimizer
+from filelock import FileLock
 
 
 def add_argument():
@@ -294,21 +295,15 @@ def main(args):
         [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )
 
-    if torch.distributed.get_rank() != 0:
-        # Might be downloading cifar data, let rank 0 download first.
-        torch.distributed.barrier()
-
     # Load or download cifar data.
-    trainset = torchvision.datasets.CIFAR10(
-        root="./data", train=True, download=True, transform=transform
-    )
-    testset = torchvision.datasets.CIFAR10(
-        root="./data", train=False, download=True, transform=transform
-    )
+    with FileLock("cifar-dataset.lock"):
+        trainset = torchvision.datasets.CIFAR10(
+            root="./data", train=True, download=True, transform=transform
+        )
+        testset = torchvision.datasets.CIFAR10(
+            root="./data", train=False, download=True, transform=transform
+        )
 
-    if torch.distributed.get_rank() == 0:
-        # Cifar data is downloaded, indicate other ranks can proceed.
-        torch.distributed.barrier()
 
     ########################################################################
     # Step 2. Define the network with DeepSpeed.
